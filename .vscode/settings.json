@@ -1,7 +1,8 @@
 {
   "cSpell.words": [
     "loglevel",
+    "mixedcase",
+    "snakecase",
     "solhint"
   ],
-  "editor.formatOnSave": true,
 }
