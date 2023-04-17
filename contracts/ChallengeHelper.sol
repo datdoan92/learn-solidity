@@ -16,7 +16,7 @@ contract ChallengeHelper is ChallengeFactory {
         takeFee = _fee;
     }
 
-    function take(uint256 _challengeId) external payable onlyChallengeNotEnded(_challengeId)  {
+    function take(uint256 _challengeId) external payable onlyChallengeNotEnded(_challengeId) {
         require(msg.value == takeFee, "You must pay the take fee");
 
         Challenge storage challenge = challenges[_challengeId - 1];
@@ -31,7 +31,10 @@ contract ChallengeHelper is ChallengeFactory {
     function vote(uint256 _challengeId, address _taker, bool _vote) external onlyChallengeNotEnded(_challengeId) {
         require(_takerToChallenge[_taker] == _challengeId, "You can only vote for takers of this challenge");
 
-        require(_userContributions[_challengeId].get(msg.sender) > 0,"You must contribute to the challenge before voting");
+        require(
+            _userContributions[_challengeId].get(msg.sender) > 0,
+            "You must contribute to the challenge before voting"
+        );
 
         require(!_votedTakers[_challengeId][msg.sender][_taker], "You can only vote once for each taker");
 
