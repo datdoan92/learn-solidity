@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.19;
 
-import {EnumerableMapUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableMapUpgradeable.sol";
+import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {ChallengeFactory} from "./ChallengeFactory.sol";
 
 contract ChallengeHelper is ChallengeFactory {
-    using EnumerableMapUpgradeable for EnumerableMapUpgradeable.AddressToUintMap;
+    using EnumerableMap for EnumerableMap.AddressToUintMap;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     uint256 public takeFee = 0.01 ether;
-    mapping(address => uint256) internal _takerToChallenge;
+    mapping(address => EnumerableSet.AddressSet) internal _challengeToTakers;
     mapping(uint256 => mapping(address => mapping(address => bool))) internal _votedTakers;
-    mapping(uint256 => EnumerableMapUpgradeable.AddressToUintMap) internal _takerToVoteCount;
+    mapping(uint256 => EnumerableMap.AddressToUintMap) internal _takerToVoteCount;
 
     function setFee(uint256 _fee) external onlyOwner {
         takeFee = _fee;
@@ -19,12 +21,13 @@ contract ChallengeHelper is ChallengeFactory {
     function take(uint256 _challengeId) external payable onlyChallengeNotEnded(_challengeId) {
         require(msg.value == takeFee, "You must pay the take fee");
 
-        Challenge storage challenge = challenges[_challengeId - 1];
+        Challenge storage challenge = challenges[_getChallengeIndex(_challengeId)];
 
         require(msg.sender != challenge.creator, "You cannot take your own challenge");
-        require(_takerToChallenge[msg.sender] != _challengeId, "You can only take a challenge once");
 
-        _takerToChallenge[msg.sender] = _challengeId;
+        EnumerableSet.AddressSet storage takers = _challengeToTakers[_challengeId];
+        require(!takers.contains(msg.sender), "You can only take a challenge once");
+
         challenge.numTakers += 1;
     }
 
@@ -48,7 +51,7 @@ contract ChallengeHelper is ChallengeFactory {
         uint256 maxVotes = 0;
         address[] memory winners = new address[](0);
 
-        EnumerableMapUpgradeable.AddressToUintMap storage votes = _takerToVoteCount[_challengeId];
+        EnumerableMap.AddressToUintMap storage votes = _takerToVoteCount[_challengeId];
         for (uint256 i = 0; i < votes.length(); i++) {
             (address taker, uint256 voteCount) = votes.at(i);
             if (voteCount > maxVotes) {
@@ -84,7 +87,7 @@ contract ChallengeHelper is ChallengeFactory {
     }
 
     function _refund(uint256 _challengeId) private {
-        EnumerableMapUpgradeable.AddressToUintMap storage contributions = _userContributions[_challengeId];
+        EnumerableMap.AddressToUintMap storage contributions = _userContributions[_challengeId];
         for (uint i = 0; i < contributions.length(); i++) {
             (address contributor, uint256 contribution) = contributions.at(i);
             payable(contributor).transfer(contribution);
