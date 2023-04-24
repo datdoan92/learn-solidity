@@ -10,9 +10,13 @@ contract ChallengeHelper is ChallengeFactory {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     uint256 public takeFee = 0.01 ether;
-    mapping(address => EnumerableSet.AddressSet) internal _challengeToTakers;
-    mapping(uint256 => mapping(address => mapping(address => bool))) internal _votedTakers;
+    mapping(uint256 => EnumerableSet.AddressSet) internal _challengeTakers;
+    mapping(uint256 => EnumerableSet.AddressSet) internal _votedContributors;
     mapping(uint256 => EnumerableMap.AddressToUintMap) internal _takerToVoteCount;
+
+    event ChallengeTaken(uint256 indexed id, address indexed taker);
+    event ChallengeVoted(uint256 indexed id, address indexed taker, address indexed voter, bool vote);
+    event ChallengeDisbursed(uint256 indexed id, address[] winners, uint256 prize);
 
     function setFee(uint256 _fee) external onlyOwner {
         takeFee = _fee;
@@ -22,29 +26,35 @@ contract ChallengeHelper is ChallengeFactory {
         require(msg.value == takeFee, "You must pay the take fee");
 
         Challenge storage challenge = challenges[_getChallengeIndex(_challengeId)];
+        require(!challenge.isDisbursed, "Challenge has already been disbursed");
 
         require(msg.sender != challenge.creator, "You cannot take your own challenge");
 
-        EnumerableSet.AddressSet storage takers = _challengeToTakers[_challengeId];
+        EnumerableSet.AddressSet storage takers = _challengeTakers[_challengeId];
         require(!takers.contains(msg.sender), "You can only take a challenge once");
 
+        takers.add(msg.sender);
         challenge.numTakers += 1;
+
+        emit ChallengeTaken(_challengeId, msg.sender);
     }
 
     function vote(uint256 _challengeId, address _taker, bool _vote) external onlyChallengeNotEnded(_challengeId) {
-        require(_takerToChallenge[_taker] == _challengeId, "You can only vote for takers of this challenge");
+        EnumerableSet.AddressSet storage takers = _challengeTakers[_challengeId];
+        require(takers.contains(_taker), "You can only vote for a taker who has taken the challenge");
 
         require(
             _userContributions[_challengeId].get(msg.sender) > 0,
             "You must contribute to the challenge before voting"
         );
 
-        require(!_votedTakers[_challengeId][msg.sender][_taker], "You can only vote once for each taker");
+        require(!_votedContributors[_challengeId].contains(msg.sender), "You can only vote once");
 
-        _votedTakers[_challengeId][msg.sender][_taker] = _vote;
-
+        _votedContributors[_challengeId].add(msg.sender);
         uint256 voteCount = _takerToVoteCount[_challengeId].get(_taker);
         _takerToVoteCount[_challengeId].set(_taker, _vote ? voteCount + 1 : voteCount);
+
+        emit ChallengeVoted(_challengeId, _taker, msg.sender, _vote);
     }
 
     function getWinners(uint256 _challengeId) public view returns (address[] memory) {
@@ -64,12 +74,8 @@ contract ChallengeHelper is ChallengeFactory {
         return winners;
     }
 
-    function distributePrizeOrRefund(uint _challengeId) external {
-        Challenge storage challenge = challenges[_challengeId];
-        // check if challengeId exists
-        require(challenge.creator != address(0), "Challenge does not exist");
-
-        require(challenge.endTime < block.timestamp, "Challenge has not ended yet");
+    function distributePrizeOrRefund(uint _challengeId) external onlyOwner {
+        Challenge storage challenge = challenges[_getChallengeIndex(_challengeId)];
 
         // if no one took the challenge, refund all contributors
         if (challenge.numTakers == 0) {
@@ -84,6 +90,10 @@ contract ChallengeHelper is ChallengeFactory {
             winnersPayable[i] = payable(winners[i]);
         }
         _distributeFunds(challenge.prizePool, winnersPayable);
+        challenge.isDisbursed = true;
+        challenge.prizePool = 0;
+
+        emit ChallengeDisbursed(_challengeId, winners, challenge.prizePool);
     }
 
     function _refund(uint256 _challengeId) private {
@@ -100,9 +110,6 @@ contract ChallengeHelper is ChallengeFactory {
 
         uint256 numRecipients = _recipients.length;
         uint256 amountPerRecipient = _prizePool / numRecipients;
-
-        // Ensure that the prize pool is evenly divisible among all recipients
-        require(_prizePool % numRecipients == 0, "Prize pool cannot be evenly distributed among recipients");
 
         for (uint256 i = 0; i < numRecipients; i++) {
             // Ensure that the recipient is not the zero address

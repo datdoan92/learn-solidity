@@ -28,6 +28,7 @@ contract ChallengeFactory is Ownable {
     Challenge[] public challenges;
 
     event ChallengeCreated(uint indexed id, string title, string rules, uint256 prizePool);
+    event ChallengeContributed(uint indexed id, address indexed contributor, uint256 amount);
 
     modifier onlyChallengeNotEnded(uint256 _id) {
         Challenge memory challenge = challenges[_getChallengeIndex(_id)];
@@ -69,5 +70,8 @@ contract ChallengeFactory is Ownable {
         _userContributions[_challengeId].set(msg.sender, previousContribution + msg.value);
         // add the contribution amount to the prize pool
         challenges[_getChallengeIndex(_challengeId)].prizePool += msg.value;
+
+        // emit event for contribution
+        emit ChallengeContributed(_challengeId, msg.sender, msg.value);
     }
 }
